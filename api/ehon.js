@@ -7,7 +7,7 @@ export default async function handler(req, res) {
 
   // AbortControllerでfetchタイムアウト制御（7秒）
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 7000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
     const searchUrl = `https://www.e-hon.ne.jp/search/book?keyw=${encodeURIComponent(title)}`;
