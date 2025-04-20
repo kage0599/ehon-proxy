@@ -3,40 +3,45 @@ import * as cheerio from "cheerio";
 
 export default async function handler(req, res) {
   const { title } = req.query;
-  if (!title) {
-    return res.status(400).json({ error: "title is required" });
-  }
+  if (!title) return res.status(400).json({ error: "title is required" });
 
-  const searchUrl = `https://www.e-hon.ne.jp/search/book?keyw=${encodeURIComponent(title)}`;
+  // AbortControllerでfetchタイムアウト制御（7秒）
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7000);
 
   try {
-    const response = await fetch(searchUrl);
-    const body = await response.text();
-    const $ = cheerio.load(body);
+    const searchUrl = `https://www.e-hon.ne.jp/search/book?keyw=${encodeURIComponent(title)}`;
+    const response = await fetch(searchUrl, { signal: controller.signal });
+    clearTimeout(timeout);
 
-    const firstItem = $("div#main div.listTitle:has(a)").first().closest("div.dataRow");
+    const html = await response.text();
+    const $ = cheerio.load(html);
 
-    if (!firstItem.length) {
-      return res.status(404).json({ error: "no result" });
+    // 最初の書籍ブロックを探す（紙版）
+    const first = $("div.dataRow").first();
+    const relative = first.find("a").attr("href");
+    const image = first.find("img").attr("src");
+    const author = first.find(".auth").text().trim();
+    const publisher = first.find(".pub").text().trim();
+    const price = first.find(".price").text().replace(/[^\d]/g, "");
+
+    if (!relative || !image) {
+      return res.status(404).json({ error: "No matching item found." });
     }
-
-    const relativeLink = firstItem.find("a").attr("href");
-    const link = `https://www.e-hon.ne.jp${relativeLink}`;
-    const image = firstItem.find("img").attr("src");
-    const author = firstItem.find(".auth").text().trim();
-    const publisher = firstItem.find(".pub").text().trim();
-    const price = firstItem.find(".price").text().replace(/[^\d]/g, "");
 
     return res.status(200).json({
       title,
-      link,
+      link: `https://www.e-hon.ne.jp${relative}`,
       image,
       author,
       publisher,
       price
     });
-  } catch (error) {
-    console.error("e-hon fetch error:", error);
-    res.status(500).json({ error: "server error", detail: error.message });
+  } catch (err) {
+    console.error("Error:", err.message);
+    return res.status(500).json({
+      error: "timeout or fetch error",
+      detail: err.message
+    });
   }
 }
